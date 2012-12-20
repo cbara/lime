@@ -47,6 +47,7 @@ class window.LIMEPlayer
       usedSpaceNWSE: "north": 0, "west": 0, "south": 0, "east": 0
       annotationsVisible : true
       debug: false
+      local: false
       preferredLanguage: "en"
       builtinPlugins:
         AnnotationOverlays: {}
@@ -66,39 +67,32 @@ class window.LIMEPlayer
           # * Startup timeupdate event handler
           @_startScheduler()
 
-  getLength: ->
-    @player.duration()
-
-  seek: (pos) ->
-    if pos isnt undefined
-      @player.currentTime pos
-
-  currentTime: ->
-    @player.currentTime()
-  play: ->
-    @player.play()
-
   _startScheduler: ->
+    getFilename = (uri) ->
+      regexp = new RegExp(/\/([^\/#]*)(#.*)?$/)
+      uri.match(regexp)?[1]
     ### handle becomeActive and becomeInactive events ###
-    jQuery(@).bind 'timeupdate', (e) ->
+    jQuery(@).bind 'timeupdate', (e) =>
       for annotation in @annotations
         currentTime = e.currentTime
-        if annotation.state is 'inactive' and annotation.start < currentTime and annotation.end + 1 > currentTime
-          # has to be activated
-          annotation.state = 'active'
-          jQuery(annotation).trigger jQuery.Event "becomeActive", annotation: annotation #signal to a particular annotation to become active
-        if annotation.state is 'active' and (annotation.start > currentTime or annotation.end + 1 < currentTime)
-          annotation.state = 'inactive'
-          jQuery(annotation).trigger jQuery.Event "becomeInactive", annotation: annotation #signal to a particular annotation to become inactive
+        currentSrc = @player.currentSource()
+        if currentSrc.indexOf(getFilename(annotation.fragment.value)) isnt -1
+          if annotation.state is 'inactive' and annotation.start < currentTime and annotation.end + 1 > currentTime
+            # has to be activated
+            annotation.state = 'active'
+            jQuery(annotation).trigger jQuery.Event "becomeActive", annotation: annotation #signal to a particular annotation to become active
+          if annotation.state is 'active' and (annotation.start > currentTime or annotation.end + 1 < currentTime)
+            annotation.state = 'inactive'
+            jQuery(annotation).trigger jQuery.Event "becomeInactive", annotation: annotation #signal to a particular annotation to become inactive
 
   _initVideoPlayer: (cb) ->
     displaysrc=''
     for locator, i in @options.video
-      displaysrc = displaysrc + "<source src=#{locator.source} type='#{locator.type}' />"
+      displaysrc = displaysrc + "<source src='#{locator.source}' type='#{locator.type}' />"
     # create center div with player, <video> id is 'videoplayer' - this gets passed to the VideoJS initializer
     $("##{@options.containerDiv}").append """
       <div class='videowrapper' id='videowrapper'>
-        <video id='video_player' class='video-js vjs-default-skin' controls preload='none' width='640' height='360' poster='img/connectme-video-poster.jpg'>
+        <video id='video_player' class='video-js vjs-default-skin' controls preload='metadata' width='640' height='360' poster='img/connectme-video-poster.jpg'>
           #{displaysrc}
         </video>
       </div>
@@ -111,34 +105,26 @@ class window.LIMEPlayer
     """
 
     # width="' + options.VideoPlayerSize.width+'" height="' + options.VideoPlayerSize.height + '"
-    _.defer =>
-      @player = _V_ 'video_player',
-        flash: iFrameMode: true
-        swf: "lib/videojs/video-js.swf"	# SORIN - added to fix flash fallback bug
-      @player.addEvent "loadedmetadata", =>
-        # @player.addComponent 'Annotations', player: @player
-        @_initEventListeners()
-        cb()
-      @player.ready =>
-        # SORIN - adding Sidebars component to VideoJS, as well as the annotation toggler
-        @player.isFullScreen = @options.fullscreen
-        @_nonfullscreen_containers = LimePlayer.widgetContainers
-        @player.addComponent("AnnotationsSidebars")  # add component to display 4 regions of annotations
-        @player.controlBar.addComponent("AnnotationToggle")	# add button to toggle annotations on/off in the control bar
-        if(!@player.isFullScreen)
-          @player.AnnotationsSidebars.hide()
-        else
-          _this.player.AnnotationsSidebars.show()
-        # END added SORIN
-        @player.play()
-        console.info "Setting up VideoJS Player", @player
+    window.LIMEPlayer.VideoJSInit 'video_player', {}, (err, playerInstance) =>
+      if err
+        alert err
+        return
+      @player = playerInstance
+      @_initEventListeners()
+      @_nonfullscreen_containers = LimePlayer.widgetContainers
+      ###
+      if(!@player.isFullScreen)
+        @player.AnnotationsSidebars.hide()
+      else
+        _this.player.AnnotationsSidebars.show()
+      ###
+      cb()
 
   _initEventListeners: ->
-    @player.addEvent 'timeupdate', (playerEvent) =>
-      # console.info playerEvent
+    jQuery(@player).bind 'timeupdate', (playerEvent) =>
       e = jQuery.Event "timeupdate", currentTime: @player.currentTime()
       jQuery(@).trigger e
-    @player.addEvent 'fullscreenchange', (e) =>
+    jQuery(@player).bind 'fullscreenchange', (e) =>
       fsce = jQuery.Event 'fullscreenchange', isFullScreen: @player.isFullScreen
       jQuery(@player).trigger fsce
       @_moveWidgets @player.isFullScreen
@@ -147,6 +133,7 @@ class window.LIMEPlayer
   _loadAnnotations: (cb) ->
     console.info "Loading annotations from LMF"
     @annotations = @options.annotations
+    src = @player.currentSource()
     cb()
     ###
     query = """
@@ -244,7 +231,12 @@ class window.LIMEPlayer
     else
       return true
 
-  getAnnotationsFor: (uri, cb) ->
+  play: ->
+    @player.play()
+  pause: ->
+    @player.pause()
+  seek: (pos) ->
+    @player.seek(pos)
 
 class window.Annotation
   constructor: (hash) ->
@@ -301,7 +293,7 @@ class URI
 class LimeWidget
   constructor: (@plugin, @element, options) ->
     @options = _(@options).extend options
-    @_init()
+    _.defer => @_init()
 
     @element.html """
     <div class="#{@name}">
@@ -313,6 +305,23 @@ class LimeWidget
       </table>
     </div>
     """
+    jQuery(@element).data 'widget', @
+    jQuery(@element).data 'plugin', @plugin
+    jQuery(@element).click (e) =>
+      widget = jQuery(e.target).data().widget
+      plugin = jQuery(e.target).data().plugin
+      @plugin.lime.pause()
+      jQuery(@).trigger 'activate',
+        plugin: plugin
+        widget: widget
+
+    # Wrap element methods for convenience on the widget
+    defMethod = (o, m) =>
+      @[m] = ->
+        console.info "calling #{m} on ", o
+        o[m].call o, arguments
+    for m in ['addClass', 'html', 'removeClass']
+      defMethod @element, m
 
   html: (content) ->
     @element.html content
@@ -327,7 +336,7 @@ class LimeWidget
   hide: ->
     @element.slideUp @options.showSpeed
   deactivate: ->
-    @grayThumbnail = @options.thumbnail.replace('.png', '')
+    grayThumbnail = @options.thumbnail.replace('.png', '')
     @element.find(".utility-icon").attr "src", grayThumbnail+"_gr.png"
     @element.find(".utility-text").css "color", "#c6c4c4"
     console.info "It's to be implemented, how a widget should look like when it's deactivated..."

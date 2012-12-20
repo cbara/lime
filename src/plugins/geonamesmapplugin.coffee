@@ -8,24 +8,19 @@ class window.GeoNamesMapPlugin extends window.LimePlugin
       jQuery(annotation).bind "becomeActive", (e) =>
         annotation = e.target
         if annotation.resource.value.indexOf("sws.geonames.org") > 0
-          widget = @lime.allocateWidgetSpace @,
-            thumbnail: "img/map.png" # should go into CSS
-            title: "#{annotation.getLabel()} Map"
-        if widget
-          if annotation.ldLoaded
-            # widget.html @renderAnnotation(annotation)
-            widget.show()
-          else
-            jQuery(annotation).bind "ldloaded", (e) =>
-              annotation = e.target
-              # widget.html @renderAnnotation(annotation)
+          annotation.entityPromise.done (entity) =>
+            widget = @lime.allocateWidgetSpace @,
+              thumbnail: "img/mapIcon.png" # should go into CSS
+              title: "#{annotation.getLabel()} Map"
+            if widget
+              widget.annotation = annotation
               widget.show()
-          # insert widget click function
-          widget.element.click => #click behaviour - highlight the related widgets by adding a class to them
-            @lime.player.pause()
-            @displayModal annotation
+              # insert widget click function
+              jQuery(widget).bind 'activate', (e) => #click behaviour - highlight the related widgets by adding a class to them
+                annotation = e.target.annotation
+                @displayModal annotation
 
-        annotation.widgets[@name] = widget
+            annotation.widgets[@name] = widget
 
       jQuery(annotation).bind "becomeInactive", (e) =>
         annotation = e.target
@@ -35,7 +30,93 @@ class window.GeoNamesMapPlugin extends window.LimePlugin
           widget.deactivate()
           return
 
-  showInModalWindow: (outputElement) ->
+  renderAnnotation: (annotation) ->
+
+    hasCoord = false
+
+    #var locationName = "";
+    queryString = ""
+
+    #  console.log("rendering geonamesAnn: ", annotation);
+    #props = annotation.entity[annotation.resource.value];
+    #console.log("Propo: "+props);
+    try
+      if window.XMLHttpRequest # code for IE7+, Firefox, Chrome, Opera, Safari
+        xmlhttp = new XMLHttpRequest()
+      else # code for IE6, IE5
+        xmlhttp = new ActiveXObject("Microsoft.XMLHTTP")
+      xmlhttp.open "POST", annotation.resource.value + "/about.rdf", false
+      xmlhttp.send()
+      xmlDoc = xmlhttp.responseXML
+
+      #document.write("<table border='1'>");
+      x = xmlDoc.getElementsByTagName("Feature")
+      i = 0
+      while i < x.length
+
+        #document.write("<tr><td>");
+        locationName = x[i].getElementsByTagName("name")[0].childNodes[0].nodeValue
+
+        #document.write("</td><td>");
+        latitude = x[i].getElementsByTagName("lat")[0].childNodes[0].nodeValue
+
+        #document.write("</td><td>");
+        longitude = x[i].getElementsByTagName("long")[0].childNodes[0].nodeValue
+        i++
+
+      #document.write("</td></tr>");
+      if latitude isnt "" and longitude isnt "" and locationName isnt ""
+
+        #	console.log("has latitude, longitude and locationName");
+        hasCoord = true
+        queryString = "http://maps.google.com/maps/api/staticmap?center=" + latitude + "," + longitude + "&zoom=9&size=400x300&format=png&maptype=roadmap&markers=color:green|label:x|" + latitude + "," + longitude + "&sensor=false"
+
+    #console.log("hasCoord: " + hasCoord);
+    returnResult = "<p> Should be a Map here </p>"
+    if hasCoord
+      returnResult = """
+        <div class="GeoNamesMapWidget">
+        <table style="margin:0 auto; width: 100%;">
+        <tr>
+          <td>
+             <b class="utility-text">#{ locationName } Map </b>
+           </td>
+            <td>
+              <img class="utility-icon" src="img/mapIcon.png" style="float: right; width: 25px; height: 25px; " >
+            </td>
+            </tr>
+          </table>
+        </div>
+        """
+
+    else
+      returnResult = " "
+    return returnResult;
+
+  showInModalWindow: (annotation, outputElement) ->
+    try
+      if window.XMLHttpRequest # code for IE7+, Firefox, Chrome, Opera, Safari
+        xmlhttp = new XMLHttpRequest()
+      else # code for IE6, IE5
+        xmlhttp = new ActiveXObject("Microsoft.XMLHTTP")
+      xmlhttp.open "POST", annotation.resource.value + "/about.rdf", false
+      xmlhttp.send()
+      xmlDoc = xmlhttp.responseXML
+
+      #document.write("<table border='1'>");
+      x = xmlDoc.getElementsByTagName("Feature")
+      i = 0
+      while i < x.length
+
+        #document.write("<tr><td>");
+        locationName = x[i].getElementsByTagName("name")[0].childNodes[0].nodeValue
+
+        #document.write("</td><td>");
+        latitude = x[i].getElementsByTagName("lat")[0].childNodes[0].nodeValue
+
+        #document.write("</td><td>");
+        longitude = x[i].getElementsByTagName("long")[0].childNodes[0].nodeValue
+        i++
     output = document.getElementById(outputElement)
     latlng = new google.maps.LatLng(latitude, longitude)
 
@@ -107,11 +188,11 @@ class window.GeoNamesMapPlugin extends window.LimePlugin
 
     #if mask is clicked
     $(mask).click (e) =>
-      $(this).hide()
+      $(mask).hide()
       $(modalcontainer).hide()
       return;
 
-    $(window).resize(e) =>
+    $(window).resize (e) =>
       #var box = modalcontainer;
 
       #Get the screen height and width
@@ -134,4 +215,4 @@ class window.GeoNamesMapPlugin extends window.LimePlugin
       return;
 
     #box.blur(function() { setTimeout(<bluraction>, 100); });
-    @showInModalWindow "modalContent"
+    @showInModalWindow annotation, "modalContent"

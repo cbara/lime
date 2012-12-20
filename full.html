@@ -9,7 +9,7 @@
     <script src="lib/jquery/jquery-1.7.1.js"></script>
     <script type="text/javascript" src="lib/backboneJS/backbone.js"></script>
     <script type="text/javascript" src="lib/rdfquery/latest/jquery.rdfquery.debug.js"></script>
-    <script type="text/javascript" src="lib/vie/vie-latest.debug.js"></script>
+    <script type="text/javascript" src="lib/vie/vie-2.0.0.debug.js"></script>
 
 	<!-- Plugin dependencies -->
 	<meta name="viewport" content="initial-scale=1.0, user-scalable=no">
@@ -32,7 +32,6 @@
     <!-- The extended player -->
     <script src="lib/lime.js"></script>
     <!-- plugins -->
-    <srcipt src="lib/plugins/ldplugin.js"></srcipt>
     <script src="lib/plugins/geonamesmapplugin.js"></script>
     <script src="lib/plugins/dbpediainfoplugin.js"></script>
     <script src="lib/plugins/googleweatherplugin.js"></script>
@@ -52,24 +51,50 @@
 		VIDEO2: https://s3-eu-west-1.amazonaws.com/yoovis-videos/6256_519_connectme_volksbuehne_heldenmp4_standardmpeg_20120427015958_standard.mp4 
 		*/
         $(document).ready(function () {
+            var local = JSON.parse(UTILS.getParameterByName('local') || 'false');
             var videoUrl = UTILS.getParameterByName('videoUrl');
             var cmfurl = UTILS.getParameterByName('cmfUrl').replace(/\/$/, '') + '/' || "http://connectme.salzburgresearch.at/CMF/";
             var lang = UTILS.getParameterByName('lang') || 'en';
             var cmf = new CMF(cmfurl);
-            cmf.getLocatorsForVideoOrLocator(videoUrl, function(err, locators){
+
+            var getAnnotations = function(cb){
+                if(local){
+                    jQuery.getJSON('annotations.json', function(res){
+                        console.info('annotation JSON', res.results.bindings);
+                        cb(false, res.results.bindings);
+                    });
+                } else {
+                    cmf.getAnnotationsForVideoOrLocator(videoUrl, cb);
+                }
+            };
+            var getLocators = function(cb){
+                if(local){
+                    var locators = [
+                        {"source":"videos/6306_519_20120508125738_ogg.ogv","type":"video/ogv"},
+                        {"source":"videos/6306_519_20120508125738_standard.mp4","type":"video/mp4"},
+                        {"source":"videos/6306_519_20120508125738_webm.webm","type":"video/webm"}
+                    ];
+                    cb(false, locators);
+                } else {
+                    cmf.getLocatorsForVideoOrLocator(videoUrl, cb);
+                }
+            };
+            getLocators(function(err, locators){
                 console.info("locators", locators);
                 if(err || locators.length == 0) {
                     console.error("Error getting video locators", err, locators);
                     alert("Error getting video locators for " + videoUrl);
                     return
                 }
-                cmf.getAnnotationsForVideoOrLocator(videoUrl, function(err, annotations){
+
+                getAnnotations(function(err, annotations){
                     annotations = _(annotations).map(function(ann){
                         return new Annotation(ann);
                     });
                     console.info("Annotations", annotations);
                     LimePlayer = new LIMEPlayer({
                         video : locators,
+                        local: local,
                         annotations: annotations,
                         containerDiv:"mainwrapper",
                         videoPlayerSize:{"width":640, "height":360},

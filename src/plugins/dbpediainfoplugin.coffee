@@ -6,24 +6,21 @@ class window.DBPediaInfoPlugin extends window.LimePlugin
       jQuery(annotation).bind "becomeActive", (e) =>
         annotation = e.target
         if annotation.resource.value.indexOf("geonames") < 0
-          widget = @lime.allocateWidgetSpace @,
-            thumbnail: "img/info.png" # should go into CSS
-            title: "#{annotation.getLabel()} Info"
-          if widget
-            if annotation.ldLoaded
-            #  widget.html @renderAnnotation(annotation)
+          annotation.entityPromise.done (entity) =>
+            widget = @lime.allocateWidgetSpace @,
+              thumbnail: "img/info.png" # should go into CSS
+              title: "#{annotation.getLabel()} Info"
+            if widget
+              widget.annotation = annotation
+                # widget.html @renderAnnotation(annotation)
+              # widget.html @renderAnnotation(annotation)
               widget.show()
-            else
-              jQuery(annotation).bind "ldloaded", (e) =>
-                annotation = e.target
-             #   widget.html @renderAnnotation(annotation)
-                widget.show()
-            # insert widget click function
-            widget.element.click => #click behaviour - highlight the related widgets by adding a class to them
-              @lime.player.pause()
-              @displayModal annotation
+              # insert widget click function
+              jQuery(widget).bind 'activate', (e) => #click behaviour - highlight the related widgets by adding a class to them
+                annotation = e.target.annotation
+                @displayModal annotation
 
-          annotation.widgets[@name] = widget
+            annotation.widgets[@name] = widget
 
       jQuery(annotation).bind "becomeInactive", (e) =>
         annotation = e.target
@@ -45,7 +42,6 @@ class window.DBPediaInfoPlugin extends window.LimePlugin
 
     #$(modalContent).append("<div style=\"margin: 10px; font-family:verdana; font-size:20px; color: white\">" + comment + "</div>");
     $(modalContent).append result
-
 
   displayModal: (annotation) -> # Modal window script usin jquery
 
